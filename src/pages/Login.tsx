@@ -2,8 +2,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Mail, Lock, User, ArrowRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Loader2, Mail, Lock, ArrowRight } from 'lucide-react';
 
 export default function Login() {
     const [isLogin, setIsLogin] = useState(true);

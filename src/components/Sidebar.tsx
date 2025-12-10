@@ -1,5 +1,5 @@
 
-import { Folder, HardDrive, Clock, Star, Trash2, Plus, Cloud } from 'lucide-react';
+import { HardDrive, Clock, Star, Trash2, Plus, Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function Sidebar() {
