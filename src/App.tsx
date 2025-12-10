@@ -45,7 +45,22 @@ function App() {
           } />
           <Route path="/" element={
             <PrivateRoute>
-              <Dashboard />
+              <Dashboard view="my-drive" />
+            </PrivateRoute>
+          } />
+          <Route path="/recent" element={
+            <PrivateRoute>
+              <Dashboard view="recent" />
+            </PrivateRoute>
+          } />
+          <Route path="/starred" element={
+            <PrivateRoute>
+              <Dashboard view="starred" />
+            </PrivateRoute>
+          } />
+          <Route path="/trash" element={
+            <PrivateRoute>
+              <Dashboard view="trash" />
             </PrivateRoute>
           } />
         </Routes>

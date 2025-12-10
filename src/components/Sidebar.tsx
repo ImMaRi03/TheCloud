@@ -1,13 +1,13 @@
-
+import { NavLink } from 'react-router-dom';
 import { HardDrive, Clock, Star, Trash2, Plus, Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function Sidebar() {
     const navItems = [
-        { icon: HardDrive, label: 'My Drive', active: true },
-        { icon: Clock, label: 'Recent', active: false },
-        { icon: Star, label: 'Starred', active: false },
-        { icon: Trash2, label: 'Trash', active: false },
+        { icon: HardDrive, label: 'My Drive', path: '/' },
+        { icon: Clock, label: 'Recent', path: '/recent' },
+        { icon: Star, label: 'Starred', path: '/starred' },
+        { icon: Trash2, label: 'Trash', path: '/trash' },
     ];
 
     return (
@@ -29,18 +29,19 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="space-y-1 flex-1">
                 {navItems.map((item) => (
-                    <button
+                    <NavLink
                         key={item.label}
-                        className={cn(
+                        to={item.path}
+                        className={({ isActive }) => cn(
                             "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                            item.active
+                            isActive
                                 ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
                                 : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                         )}
                     >
                         <item.icon className="w-4 h-4" />
                         {item.label}
-                    </button>
+                    </NavLink>
                 ))}
             </nav>
 
