@@ -3,6 +3,12 @@ export default {
     content: [
         "./index.html",
         "./src/**/*.{js,ts,jsx,tsx}",
+        "./src/components/**/*.{js,ts,jsx,tsx}",
+        "./src/pages/**/*.{js,ts,jsx,tsx}",
+        "./src/layouts/**/*.{js,ts,jsx,tsx}",
+    ],
+    safelist: [
+        'w-16', 'h-16', 'w-full', 'h-full', 'bg-blue-600', 'text-white'
     ],
     theme: {
         extend: {
