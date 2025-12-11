@@ -12,7 +12,7 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children, onCreateFolder, onUploadFile, onUploadFolder, storageUsage }: DashboardLayoutProps) {
     return (
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        <div className="flex h-screen bg-white dark:bg-gray-900 overflow-hidden">
             <Sidebar
                 onCreateFolder={onCreateFolder}
                 onUploadFile={onUploadFile}

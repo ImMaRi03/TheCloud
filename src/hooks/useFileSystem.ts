@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import type { FileSystemNode, BreadcrumbItem } from '../types/filesystem';
 
-export const useFileSystem = (initialFolderId: string | null = null) => {
+export const useFileSystem = (initialFolderId: string | null = null, view: 'my-drive' | 'recent' | 'starred' | 'trash' = 'my-drive') => {
     const { user } = useAuth();
     const [nodes, setNodes] = useState<FileSystemNode[]>([]);
     const [loading, setLoading] = useState(true);
@@ -83,9 +83,7 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
         fetchPath();
     }, [currentFolderId]);
 
-    useEffect(() => {
-        fetchNodes();
-    }, [fetchNodes]);
+
 
     const createFolder = async (name: string) => {
         if (!user) return;
@@ -204,14 +202,13 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
             for (const file of fileArray) {
                 const relativePath = file.webkitRelativePath || file.name;
                 const pathParts = relativePath.split('/');
-                const fileName = pathParts.pop()!; // Remove file name
+                pathParts.pop(); // Remove file name
 
                 // Find or create parent folder
                 let parentId = currentFolderId;
                 let currentPath = '';
 
                 for (const part of pathParts) {
-                    const parentPath = currentPath;
                     currentPath = currentPath ? `${currentPath}/${part}` : part;
 
                     if (folderCache[currentPath]) {
@@ -330,7 +327,7 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
                     if (!node.updated_at) return false;
                     const created = new Date(node.created_at).getTime();
                     const updated = new Date(node.updated_at).getTime();
-                    return updated > created + 1000; // 1 second buffer to avoid immediate creation timestamps
+                    return updated > created;
                 });
                 setNodes(recentFiles);
             }
@@ -340,6 +337,23 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
             setLoading(false);
         }
     }, [user]);
+
+    useEffect(() => {
+        setNodes([]); // Clear nodes to prevent state leakage
+        if (view !== 'my-drive') {
+            setCurrentFolderId(null);
+        }
+
+        if (view === 'recent') {
+            fetchRecent();
+        } else if (view === 'starred') {
+            fetchStarred();
+        } else if (view === 'trash') {
+            fetchTrash();
+        } else {
+            fetchNodes();
+        }
+    }, [view, fetchNodes, fetchRecent, fetchStarred, fetchTrash]);
 
     return {
         nodes,

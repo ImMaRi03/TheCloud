@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Mail, Lock, ArrowRight } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function Login() {
     const [isLogin, setIsLogin] = useState(true);
@@ -11,6 +12,7 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { signInWithEmail, signUp } = useAuth();
+    const { t } = useLanguage();
     const navigate = useNavigate();
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -47,10 +49,10 @@ export default function Login() {
                         </svg>
                     </div>
                     <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                        {isLogin ? 'Welcome Back' : 'Create Account'}
+                        {isLogin ? t('welcomeBack') : t('createAccount')}
                     </h2>
                     <p className="text-gray-500 dark:text-gray-400">
-                        {isLogin ? 'Enter your credentials to access your drive' : 'Start your journey with us today'}
+                        {isLogin ? t('enterCredentials') : t('startJourney')}
                     </p>
                 </div>
 
@@ -69,7 +71,7 @@ export default function Login() {
                                 <Mail className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
                                 <input
                                     type="email"
-                                    placeholder="Email address"
+                                    placeholder={t('emailPlaceholder')}
                                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -80,7 +82,7 @@ export default function Login() {
                                 <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
                                 <input
                                     type="password"
-                                    placeholder="Password"
+                                    placeholder={t('passwordPlaceholder')}
                                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -98,7 +100,7 @@ export default function Login() {
                                 <Loader2 className="h-5 w-5 animate-spin" />
                             ) : (
                                 <>
-                                    {isLogin ? 'Sign In' : 'Sign Up'}
+                                    {isLogin ? t('signIn') : t('signUp')}
                                     <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}
@@ -113,7 +115,7 @@ export default function Login() {
                             }}
                             className="text-sm text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 font-medium transition-colors"
                         >
-                            {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+                            {isLogin ? t('noAccount') : t('hasAccount')}
                         </button>
                     </div>
                 </div>

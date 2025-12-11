@@ -5,6 +5,7 @@ import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import FileEditor from '@/pages/FileEditor';
 import { Loader2 } from 'lucide-react';
+import { SearchProvider } from '@/context/SearchContext';
 
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -37,40 +38,42 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 function App() {
   return (
     <AuthProvider>
-      <Router basename={import.meta.env.BASE_URL}>
-        <Routes>
-          <Route path="/login" element={
-            <PublicRoute>
-              <Login />
-            </PublicRoute>
-          } />
-          <Route path="/" element={
-            <PrivateRoute>
-              <Dashboard view="my-drive" />
-            </PrivateRoute>
-          } />
-          <Route path="/recent" element={
-            <PrivateRoute>
-              <Dashboard view="recent" />
-            </PrivateRoute>
-          } />
-          <Route path="/starred" element={
-            <PrivateRoute>
-              <Dashboard view="starred" />
-            </PrivateRoute>
-          } />
-          <Route path="/trash" element={
-            <PrivateRoute>
-              <Dashboard view="trash" />
-            </PrivateRoute>
-          } />
-          <Route path="/editor/:fileId" element={
-            <PrivateRoute>
-              <FileEditor />
-            </PrivateRoute>
-          } />
-        </Routes>
-      </Router>
+      <SearchProvider>
+        <Router basename={import.meta.env.BASE_URL}>
+          <Routes>
+            <Route path="/login" element={
+              <PublicRoute>
+                <Login />
+              </PublicRoute>
+            } />
+            <Route path="/" element={
+              <PrivateRoute>
+                <Dashboard view="my-drive" />
+              </PrivateRoute>
+            } />
+            <Route path="/recent" element={
+              <PrivateRoute>
+                <Dashboard view="recent" />
+              </PrivateRoute>
+            } />
+            <Route path="/starred" element={
+              <PrivateRoute>
+                <Dashboard view="starred" />
+              </PrivateRoute>
+            } />
+            <Route path="/trash" element={
+              <PrivateRoute>
+                <Dashboard view="trash" />
+              </PrivateRoute>
+            } />
+            <Route path="/editor/:fileId" element={
+              <PrivateRoute>
+                <FileEditor />
+              </PrivateRoute>
+            } />
+          </Routes>
+        </Router>
+      </SearchProvider>
     </AuthProvider>
   );
 }

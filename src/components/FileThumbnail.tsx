@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/supabaseClient';
 import type { FileSystemNode } from '@/types/filesystem';
-import { FileIcon, ImageIcon, Film, Music, Code, FileText, File } from 'lucide-react';
+import { FileIcon, ImageIcon, Film, Music, Code, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface FileThumbnailProps {

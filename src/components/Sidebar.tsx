@@ -10,7 +10,10 @@ interface SidebarProps {
     storageUsage?: number;
 }
 
+import { useLanguage } from '@/context/LanguageContext';
+
 export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageUsage = 0 }: SidebarProps) {
+    const { t } = useLanguage();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,10 +32,10 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
     };
 
     const navItems = [
-        { icon: HardDrive, label: 'My Drive', path: '/' },
-        { icon: Clock, label: 'Recent', path: '/recent' },
-        { icon: Star, label: 'Starred', path: '/starred' },
-        { icon: Trash2, label: 'Trash', path: '/trash' },
+        { icon: HardDrive, label: t('myDrive'), path: '/' },
+        { icon: Clock, label: t('recentFiles'), path: '/recent' },
+        { icon: Star, label: t('starred'), path: '/starred' },
+        { icon: Trash2, label: t('trash'), path: '/trash' },
     ];
 
     useEffect(() => {
@@ -65,7 +68,7 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
     };
 
     return (
-        <div className="w-64 h-full bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col p-4">
+        <div className="w-64 h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col p-4">
             {/* Logo */}
             <div className="flex items-center gap-2 px-2 mb-8">
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -81,7 +84,7 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
                     className="w-full flex items-center justify-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 px-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-all group"
                 >
                     <Plus className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
-                    <span className="font-medium">New</span>
+                    <span className="font-medium">{t('new')}</span>
                 </button>
 
                 {isDropdownOpen && (
@@ -91,7 +94,7 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm transition-colors text-left"
                         >
                             <FolderPlus className="w-4 h-4 text-gray-500" />
-                            Nueva carpeta
+                            {t('createFolder')}
                         </button>
                         <div className="h-px bg-gray-100 dark:bg-gray-700 mx-2" />
                         <button
@@ -99,14 +102,14 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm transition-colors text-left"
                         >
                             <FileUp className="w-4 h-4 text-gray-500" />
-                            Subir archivo
+                            {t('uploadFile')}
                         </button>
                         <button
                             onClick={() => folderInputRef.current?.click()}
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm transition-colors text-left"
                         >
                             <FolderUp className="w-4 h-4 text-gray-500" />
-                            Subir carpeta
+                            {t('uploadFolder')}
                         </button>
                     </div>
                 )}
@@ -132,7 +135,7 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
             <nav className="space-y-1 flex-1">
                 {navItems.map((item) => (
                     <NavLink
-                        key={item.label}
+                        key={item.path}
                         to={item.path}
                         className={({ isActive }) => cn(
                             "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
@@ -150,8 +153,8 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
             {/* Storage Status */}
             <div className="mt-auto px-2">
                 <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
-                    <span>Storage</span>
-                    <span>{usagePercent > 0 && usagePercent < 1 ? '< 1' : Math.round(usagePercent)}% used</span>
+                    <span>{t('storage')}</span>
+                    <span>{usagePercent > 0 && usagePercent < 1 ? '< 1' : Math.round(usagePercent)}% {t('used')}</span>
                 </div>
                 <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                     <div
@@ -162,7 +165,7 @@ export function Sidebar({ onCreateFolder, onUploadFile, onUploadFolder, storageU
                     />
                 </div>
                 <div className="mt-2 text-xs text-gray-400 text-center">
-                    {formatSize(storageUsage)} of {formatSize(STORAGE_LIMIT)} used
+                    {formatSize(storageUsage)} {t('of')} {formatSize(STORAGE_LIMIT)} {t('used')}
                 </div>
             </div>
         </div>

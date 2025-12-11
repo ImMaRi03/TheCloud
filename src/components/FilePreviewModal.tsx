@@ -1,4 +1,5 @@
 import { X, Download, Maximize2, Edit } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { supabase } from '@/supabaseClient';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
@@ -6,6 +7,9 @@ import type { FileSystemNode } from '@/types/filesystem';
 import * as mammoth from 'mammoth';
 import { read, utils } from 'xlsx';
 import { useNavigate } from 'react-router-dom';
+import { downloadNode } from '@/lib/downloadUtils';
+import { useLanguage } from '@/context/LanguageContext';
+import { JsonViewer } from './JsonViewer';
 
 interface FilePreviewModalProps {
     file: FileSystemNode;
@@ -14,6 +18,7 @@ interface FilePreviewModalProps {
 
 export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
     const navigate = useNavigate();
+    const { t } = useLanguage();
     const [content, setContent] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [signedUrl, setSignedUrl] = useState<string | null>(null);
@@ -21,6 +26,12 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
 
     useEffect(() => {
         const fetchContent = async () => {
+            // Touch the file (mark as viewed)
+            if (file.id) {
+                // Fire and forget update
+                supabase.from('nodes').update({ updated_at: new Date().toISOString() }).eq('id', file.id).then();
+            }
+
             if (!file.storage_path) return;
 
             setLoading(true);
@@ -47,10 +58,23 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
                         const arrayBuffer = await response.arrayBuffer();
                         const result = await mammoth.convertToHtml({ arrayBuffer });
                         setContent(result.value);
-                    } else if (file.name.endsWith('.java') || file.file_type?.includes('text') || file.name.endsWith('.ts') || file.name.endsWith('.js')) {
+                    } else if (file.name.endsWith('.java') || file.file_type?.includes('text') || file.name.endsWith('.ts') || file.name.endsWith('.js') || file.name.endsWith('.md') || file.name.endsWith('.txt') || file.name.endsWith('.json')) {
                         const response = await fetch(data.signedUrl);
                         const text = await response.text();
-                        setContent(text);
+                        try {
+                            // Try to format JSON if it is one
+                            if (file.name.endsWith('.json')) {
+                                // We keep the raw text because JsonViewer parses it inside render or we can parse it here
+                                // Actually better to keep it specific.
+                                // For consistency with other types, let's just store the text content
+                                // and parse it when rendering the viewer component
+                                setContent(text);
+                            } else {
+                                setContent(text);
+                            }
+                        } catch (e) {
+                            setContent(text);
+                        }
                     }
                 }
             } catch (error) {
@@ -64,14 +88,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
     }, [file]);
 
     const handleDownload = () => {
-        if (signedUrl) {
-            const link = document.createElement('a');
-            link.href = signedUrl;
-            link.download = file.name;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+        downloadNode(file);
     };
 
     const handleEdit = () => {
@@ -82,6 +99,9 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
     const isPDF = file.file_type === 'application/pdf';
     const isCode = file.name.endsWith('.java') || file.name.endsWith('.ts') || file.name.endsWith('.js');
     const isDoc = file.name.endsWith('.docx') || file.name.endsWith('.xlsx');
+    const isMD = file.name.endsWith('.md');
+    const isTxt = file.name.endsWith('.txt');
+    const isJSON = file.name.endsWith('.json');
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
@@ -100,13 +120,13 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button onClick={() => setIsMaximized(!isMaximized)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors" title={isMaximized ? "Restore" : "Maximize"}>
+                        <button onClick={() => setIsMaximized(!isMaximized)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors" title={isMaximized ? t('minimize') : t('maximize')}>
                             <Maximize2 className="w-5 h-5" />
                         </button>
-                        <button onClick={handleDownload} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors" title="Download">
+                        <button onClick={handleDownload} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors" title={t('download')}>
                             <Download className="w-5 h-5" />
                         </button>
-                        <button onClick={handleEdit} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors" title="Edit">
+                        <button onClick={handleEdit} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors" title={t('edit')}>
                             <Edit className="w-5 h-5" />
                         </button>
                         <button onClick={onClose} className="p-2 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 rounded-lg text-gray-500 transition-colors">
@@ -129,27 +149,42 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
                                 <iframe src={signedUrl} className="w-full h-full rounded-lg shadow-lg border-none" title="PDF Viewer" />
                             )}
 
-                            {(isCode || isDoc) && content && (
+                            {(isCode || isDoc || isMD || isTxt || isJSON) && content && (
                                 <div className={cn(
-                                    "w-full h-full p-8 rounded-lg shadow-sm overflow-auto max-w-none",
-                                    isDoc
-                                        ? "bg-white text-black prose"
+                                    "w-full h-full p-8 rounded-lg shadow-sm overflow-auto max-w-none text-left",
+                                    isDoc || isMD
+                                        ? "bg-white text-black prose max-w-none"
                                         : "bg-white dark:bg-gray-950 prose dark:prose-invert"
                                 )}>
                                     {isCode ? (
                                         <pre className="font-mono text-sm">
                                             <code>{content}</code>
                                         </pre>
+                                    ) : isJSON ? (
+                                        <div className="min-h-full">
+                                            {(() => {
+                                                try {
+                                                    const json = JSON.parse(content || '{}');
+                                                    return <JsonViewer data={json} />;
+                                                } catch (e) {
+                                                    return <pre className="font-mono text-sm text-red-500">{content}</pre>;
+                                                }
+                                            })()}
+                                        </div>
+                                    ) : isMD ? (
+                                        <ReactMarkdown>{content}</ReactMarkdown>
+                                    ) : isTxt ? (
+                                        <pre className="whitespace-pre-wrap font-sans text-sm">{content}</pre>
                                     ) : (
                                         <div dangerouslySetInnerHTML={{ __html: content }} />
                                     )}
                                 </div>
                             )}
 
-                            {!isImage && !isPDF && !isCode && !isDoc && (
+                            {!isImage && !isPDF && !isCode && !isDoc && !isMD && !isTxt && !isJSON && (
                                 <div className="text-center text-gray-500">
-                                    <p>No preview available for this file type.</p>
-                                    <button onClick={handleDownload} className="mt-4 text-blue-600 hover:underline">Download to view</button>
+                                    <p>{t('noPreview')}</p>
+                                    <button onClick={handleDownload} className="mt-4 text-blue-600 hover:underline">{t('downloadToView')}</button>
                                 </div>
                             )}
                         </>

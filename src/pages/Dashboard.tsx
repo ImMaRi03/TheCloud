@@ -9,10 +9,14 @@ import {
     RotateCcw, X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/supabaseClient';
 import { FilePreviewModal } from '@/components/FilePreviewModal';
 import { FileThumbnail } from '@/components/FileThumbnail';
 import type { FileSystemNode } from '@/types/filesystem';
+import { downloadNode } from '@/lib/downloadUtils';
+import { Download } from 'lucide-react';
+import { useNotification } from '@/context/NotificationContext';
+import { useLanguage } from '@/context/LanguageContext';
+import { useSearch } from '@/context/SearchContext';
 
 interface DashboardProps {
     view?: 'my-drive' | 'recent' | 'starred' | 'trash';
@@ -22,24 +26,23 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
     const {
         nodes, loading, currentFolderId, breadcrumbs,
         createFolder, uploadFile, toggleStar, moveToTrash,
-        setCurrentFolderId, fetchNodes, fetchStarred, fetchTrash,
+        setCurrentFolderId,
         restoreFromTrash, deletePermanently,
-        moveNode, uploadFolderStructure, totalUsage, fetchRecent, touchNode
-    } = useFileSystem();
+        moveNode, uploadFolderStructure, totalUsage, touchNode
+    } = useFileSystem(null, view); // Pass view to hook
 
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [dragActive, setDragActive] = useState(false);
     const [dragTargetId, setDragTargetId] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, nodeId: string } | null>(null);
     const [previewFile, setPreviewFile] = useState<FileSystemNode | null>(null);
+    const { addNotification, updateNotification, startFlyingAnimation } = useNotification();
+    const { t } = useLanguage();
+    const { searchQuery } = useSearch();
 
-    // Fetch data based on view
-    useEffect(() => {
-        if (view === 'starred') fetchStarred();
-        else if (view === 'trash') fetchTrash();
-        else if (view === 'recent') fetchRecent();
-        else fetchNodes();
-    }, [view, currentFolderId, fetchNodes, fetchStarred, fetchTrash, fetchRecent]);
+    const filteredNodes = nodes.filter(node =>
+        node.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     // Format file size
     const formatSize = (bytes: number) => {
@@ -51,7 +54,8 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
     };
 
     // Get icon for file type
-    const getFileIcon = (type: string | null) => {
+    const getFileIcon = (type: string | null, name?: string) => {
+        if (name?.endsWith('.md')) return <FileText className="w-8 h-8 text-gray-500 dark:text-gray-400" />;
         if (!type) return <FileIcon className="w-8 h-8 text-gray-400" />;
         if (type.startsWith('image/')) return <ImageIcon className="w-8 h-8 text-purple-500" />;
         if (type.startsWith('audio/')) return <Music className="w-8 h-8 text-pink-500" />;
@@ -174,7 +178,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
 
     const ContextMenu = () => {
         if (!contextMenu) return null;
-        const node = nodes.find(n => n.id === contextMenu.nodeId);
+        const node = filteredNodes.find(n => n.id === contextMenu.nodeId);
         if (!node) return null;
 
         return (
@@ -186,7 +190,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                     <>
                         <button
                             onClick={() => { restoreFromTrash(node.id); setContextMenu(null); }}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
                         >
                             <RotateCcw className="w-4 h-4" /> Restore
                         </button>
@@ -201,14 +205,62 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                     <>
                         <button
                             onClick={() => { toggleStar(node.id, node.is_starred); setContextMenu(null); }}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
                         >
                             <Star className={cn("w-4 h-4", node.is_starred && "fill-yellow-400 text-yellow-400")} />
                             {node.is_starred ? 'Remove from Starred' : 'Add to Starred'}
                         </button>
-                        {/* <button className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm">
+                        <button
+                            onClick={(e) => {
+                                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                const fileNode = node; // capture node in closure
+
+                                // Only use flying animation for folders as requested, or maybe for all downloads?
+                                // User said "OJO solo los zip ya que tardan un poco en aparecer"
+                                if (fileNode.is_folder) {
+                                    startFlyingAnimation(rect);
+
+                                    const notifId = addNotification({
+                                        title: `Preparing ${fileNode.name}`,
+                                        type: 'download',
+                                        status: 'pending',
+                                        progress: 0,
+                                        message: 'Starting download...'
+                                    });
+
+                                    downloadNode(fileNode, {
+                                        onProgress: (progress, message) => {
+                                            updateNotification(notifId, { progress, message });
+                                        },
+                                        onComplete: () => {
+                                            updateNotification(notifId, {
+                                                status: 'completed',
+                                                progress: 100,
+                                                title: `Downloaded ${fileNode.name}`,
+                                                message: 'Download complete',
+                                                type: 'success'
+                                            });
+                                        },
+                                        onError: (err) => {
+                                            console.error(err);
+                                            updateNotification(notifId, {
+                                                status: 'failed',
+                                                title: `Failed to download ${fileNode.name}`,
+                                                message: 'Error occurred',
+                                                type: 'error'
+                                            });
+                                        }
+                                    });
+                                } else {
+                                    // Normal download for files
+                                    downloadNode(fileNode);
+                                }
+                                setContextMenu(null);
+                            }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                        >
                             <Download className="w-4 h-4" /> Download
-                        </button> */}
+                        </button>
                         <div className="h-px bg-gray-200 dark:bg-gray-700 my-1" />
                         <button
                             onClick={() => { moveToTrash(node.id); setContextMenu(null); }}
@@ -261,7 +313,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                                     onDragLeave={handleDragLeaveTarget}
                                     onDrop={(e) => handleDropOnBreadcrumb(e, null)}
                                 >
-                                    Home
+                                    {t('home')}
                                 </span>
                                 {breadcrumbs.map((crumb) => (
                                     <div key={crumb.id} className="flex items-center">
@@ -291,7 +343,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                                 onClick={handleCreateFolder}
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium mr-2"
                             >
-                                + New Folder
+                                {t('newFolder')}
                             </button>
                         )}
                         <div className="bg-gray-100 dark:bg-gray-800 p-1 rounded-lg flex">
@@ -316,7 +368,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                     <div className="absolute inset-0 bg-blue-500/10 border-4 border-blue-500 border-dashed rounded-xl z-50 flex items-center justify-center pointer-events-none">
                         <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl flex flex-col items-center animate-bounce">
                             <UploadCloud className="w-12 h-12 text-blue-500 mb-4" />
-                            <p className="text-lg font-bold text-gray-700 dark:text-gray-200">Drop files to upload</p>
+                            <p className="text-lg font-bold text-gray-700 dark:text-gray-200">{t('dropToUpload')}</p>
                         </div>
                     </div>
                 )}
@@ -326,13 +378,24 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                     <div className="flex-1 flex items-center justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
                     </div>
-                ) : nodes.length === 0 ? (
+                ) : filteredNodes.length === 0 ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                        <div className="w-64 h-64 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
-                            <Folder className="w-32 h-32 text-gray-300 dark:text-gray-600" />
-                        </div>
-                        <p className="text-xl font-medium text-gray-600 dark:text-gray-300">It's pretty empty here</p>
-                        <p className="text-sm mt-2">Drag and drop files to upload</p>
+                        {nodes.length > 0 ? (
+                            // Search empty state
+                            <div className="text-center">
+                                <p className="text-xl font-medium text-gray-600 dark:text-gray-300">No matching files found</p>
+                                <p className="text-sm mt-2">Try a different search term</p>
+                            </div>
+                        ) : (
+                            // Folder empty state
+                            <>
+                                <div className="w-64 h-64 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                                    <Folder className="w-32 h-32 text-gray-300 dark:text-gray-600" />
+                                </div>
+                                <p className="text-xl font-medium text-gray-600 dark:text-gray-300">{t('emptyStateTitle')}</p>
+                                <p className="text-sm mt-2">{t('emptyStateDesc')}</p>
+                            </>
+                        )}
                     </div>
                 ) : (
                     <div className={cn(
@@ -340,7 +403,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                             ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 p-4"
                             : "space-y-1 p-4"
                     )}>
-                        {nodes.map((node) => (
+                        {filteredNodes.map((node) => (
                             <div
                                 key={node.id}
                                 draggable
@@ -388,7 +451,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                                             ) : node.file_type?.startsWith('image/') ? (
                                                 <FileThumbnail file={node} />
                                             ) : (
-                                                getFileIcon(node.file_type)
+                                                getFileIcon(node.file_type, node.name)
                                             )}
                                         </div>
                                         <div className="mt-2 flex items-center justify-between">
@@ -404,7 +467,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                                             {node.is_folder ? (
                                                 <Folder className="w-6 h-6 text-gray-400" />
                                             ) : (
-                                                getFileIcon(node.file_type)
+                                                getFileIcon(node.file_type, node.name)
                                             )}
                                         </div>
                                         <span className="flex-1 text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
