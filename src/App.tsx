@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
+import FileEditor from '@/pages/FileEditor';
 import { Loader2 } from 'lucide-react';
 
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
@@ -61,6 +62,11 @@ function App() {
           <Route path="/trash" element={
             <PrivateRoute>
               <Dashboard view="trash" />
+            </PrivateRoute>
+          } />
+          <Route path="/editor/:fileId" element={
+            <PrivateRoute>
+              <FileEditor />
             </PrivateRoute>
           } />
         </Routes>

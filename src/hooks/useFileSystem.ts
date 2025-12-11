@@ -10,6 +10,25 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
     const [currentFolderId, setCurrentFolderId] = useState<string | null>(initialFolderId);
     const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [totalUsage, setTotalUsage] = useState(0);
+
+    const fetchStorageUsage = useCallback(async () => {
+        if (!user) return;
+        const { data } = await supabase
+            .from('nodes')
+            .select('size')
+            .eq('owner_id', user.id)
+            .eq('is_folder', false);
+
+        if (data) {
+            const total = data.reduce((acc, curr) => acc + (curr.size || 0), 0);
+            setTotalUsage(total);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        fetchStorageUsage();
+    }, [fetchStorageUsage]);
 
     const fetchNodes = useCallback(async () => {
         if (!user) return;
@@ -110,6 +129,7 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
             if (dbError) throw dbError;
 
             fetchNodes();
+            fetchStorageUsage();
         } catch (error) {
             console.error('Error uploading file:', error);
             alert('Error uploading file');
@@ -160,6 +180,116 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
         fetchTrash(); // Refresh trash view
     };
 
+    const moveNode = async (nodeId: string, targetFolderId: string | null) => {
+        try {
+            await supabase.from('nodes').update({ parent_id: targetFolderId }).eq('id', nodeId);
+            fetchNodes();
+        } catch (error) {
+            console.error('Error moving node:', error);
+        }
+    };
+
+    const uploadFolderStructure = async (files: FileList) => {
+        if (!user) return;
+        setLoading(true);
+
+        const fileArray = Array.from(files);
+        // Sort by path length to ensure folders are created in order
+        fileArray.sort((a, b) => (a.webkitRelativePath || a.name).length - (b.webkitRelativePath || b.name).length);
+
+        const folderCache: { [key: string]: string } = {};
+        if (currentFolderId) folderCache[''] = currentFolderId;
+
+        try {
+            for (const file of fileArray) {
+                const relativePath = file.webkitRelativePath || file.name;
+                const pathParts = relativePath.split('/');
+                const fileName = pathParts.pop()!; // Remove file name
+
+                // Find or create parent folder
+                let parentId = currentFolderId;
+                let currentPath = '';
+
+                for (const part of pathParts) {
+                    const parentPath = currentPath;
+                    currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+                    if (folderCache[currentPath]) {
+                        parentId = folderCache[currentPath];
+                    } else {
+                        // Check if folder exists in DB under the current parent
+                        // Optimization: We could query all folders upfront, but for now we do specific checks/creates
+                        // Note: To properly support this without excessive queries, we should likely select all folders in tree.
+                        // For this implementation, we will try to just create if it doesn't exist in our cache for this session.
+
+                        // We need a way to check if this folder already exists in the destination to avoid dupes
+                        const { data: existing } = await supabase
+                            .from('nodes')
+                            .select('id')
+                            .eq('name', part)
+                            .eq('is_folder', true)
+                            .is('parent_id', parentId) // Check in the resolved parent
+                            .eq('owner_id', user.id)
+                            .maybeSingle();
+
+                        if (existing) {
+                            parentId = existing.id;
+                            folderCache[currentPath] = existing.id;
+                        } else {
+                            // Create
+                            const { data: newFolder, error } = await supabase
+                                .from('nodes')
+                                .insert({
+                                    name: part,
+                                    is_folder: true,
+                                    parent_id: parentId,
+                                    owner_id: user.id
+                                })
+                                .select('id')
+                                .single();
+
+                            if (error) throw error;
+                            if (newFolder) {
+                                parentId = newFolder.id;
+                                folderCache[currentPath] = newFolder.id;
+                            }
+                        }
+                    }
+                }
+
+                // Upload the file to the resolved parentId
+                await uploadFileToFolder(file, parentId);
+            }
+        } catch (error) {
+            console.error('Error uploading folder structure:', error);
+            alert('Error in batch upload');
+        } finally {
+            fetchNodes();
+            setLoading(false);
+        }
+    };
+
+    // Modified uploadFile to accept targetFolderId optionally
+    const uploadFileToFolder = async (file: File, targetFolderId: string | null) => {
+        if (!user) return;
+        // Logic same as uploadFile but using targetFolderId
+        const filePath = `${user.id}/${Date.now()}_${file.name}`;
+        const { error: uploadError } = await supabase.storage.from('drive-files').upload(filePath, file);
+        if (uploadError) throw uploadError;
+
+        const { error: dbError } = await supabase.from('nodes').insert({
+            name: file.name,
+            is_folder: false,
+            parent_id: targetFolderId,
+            owner_id: user.id,
+            storage_path: filePath,
+            file_type: file.type,
+            size: file.size
+        });
+        if (dbError) throw dbError;
+        fetchStorageUsage();
+    };
+
     const deletePermanently = async (nodeId: string, storagePath: string | null) => {
         // If file, delete from storage first
         if (storagePath) {
@@ -167,7 +297,49 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
         }
         await supabase.from('nodes').delete().eq('id', nodeId);
         fetchTrash(); // Refresh
+        fetchStorageUsage();
     };
+
+    const touchNode = async (nodeId: string) => {
+        try {
+            await supabase.from('nodes').update({ updated_at: new Date().toISOString() }).eq('id', nodeId);
+            // Optimistic update if needed, but usually we refetch or let next fetch handle it
+        } catch (error) {
+            console.error('Error touching node:', error);
+        }
+    };
+
+    const fetchRecent = useCallback(async () => {
+        if (!user) return;
+        setLoading(true);
+        try {
+            // Fetch all files (not folders) owned by user, ordered by updated_at
+            const { data } = await supabase
+                .from('nodes')
+                .select('*')
+                .eq('owner_id', user.id)
+                .eq('is_folder', false)
+                .eq('is_trashed', false)
+                .order('updated_at', { ascending: false })
+                .limit(50); // increased limit to ensure we find enough candidates
+
+            if (data) {
+                // Filter client side: Only show files where updated_at > created_at (with some tolerance)
+                // or just updated_at is significantly later than created_at
+                const recentFiles = (data as FileSystemNode[]).filter(node => {
+                    if (!node.updated_at) return false;
+                    const created = new Date(node.created_at).getTime();
+                    const updated = new Date(node.updated_at).getTime();
+                    return updated > created + 1000; // 1 second buffer to avoid immediate creation timestamps
+                });
+                setNodes(recentFiles);
+            }
+        } catch (error) {
+            console.error('Error fetching recent:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [user]);
 
     return {
         nodes,
@@ -183,8 +355,13 @@ export const useFileSystem = (initialFolderId: string | null = null) => {
         moveToTrash,
         fetchNodes,
         fetchStarred,
-        fetchTrash, // Expose these for specialized pages or views
+        fetchTrash,
+        fetchRecent,
+        touchNode,
         restoreFromTrash,
-        deletePermanently
+        deletePermanently,
+        moveNode,
+        uploadFolderStructure,
+        totalUsage
     };
 };

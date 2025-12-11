@@ -12,6 +12,7 @@ export interface FileSystemNode {
     is_starred: boolean;
     is_trashed: boolean;
     trashed_at: string | null;
+    updated_at?: string;
 }
 
 export interface BreadcrumbItem {

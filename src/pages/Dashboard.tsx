@@ -9,6 +9,10 @@ import {
     RotateCcw, X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/supabaseClient';
+import { FilePreviewModal } from '@/components/FilePreviewModal';
+import { FileThumbnail } from '@/components/FileThumbnail';
+import type { FileSystemNode } from '@/types/filesystem';
 
 interface DashboardProps {
     view?: 'my-drive' | 'recent' | 'starred' | 'trash';
@@ -19,19 +23,23 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
         nodes, loading, currentFolderId, breadcrumbs,
         createFolder, uploadFile, toggleStar, moveToTrash,
         setCurrentFolderId, fetchNodes, fetchStarred, fetchTrash,
-        restoreFromTrash, deletePermanently
+        restoreFromTrash, deletePermanently,
+        moveNode, uploadFolderStructure, totalUsage, fetchRecent, touchNode
     } = useFileSystem();
 
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [dragActive, setDragActive] = useState(false);
+    const [dragTargetId, setDragTargetId] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, nodeId: string } | null>(null);
+    const [previewFile, setPreviewFile] = useState<FileSystemNode | null>(null);
 
     // Fetch data based on view
     useEffect(() => {
         if (view === 'starred') fetchStarred();
         else if (view === 'trash') fetchTrash();
+        else if (view === 'recent') fetchRecent();
         else fetchNodes();
-    }, [view, currentFolderId, fetchNodes, fetchStarred, fetchTrash]);
+    }, [view, currentFolderId, fetchNodes, fetchStarred, fetchTrash, fetchRecent]);
 
     // Format file size
     const formatSize = (bytes: number) => {
@@ -57,8 +65,22 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
     const handleDrag = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
+
+        // Only handle file drags for the overlay
+        if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes("nodeId")) {
+            return;
+        }
+
+        // Additional check: often "Files" is the type for external files
+        // But for internal drags we set "nodeId". 
+        // We probably only want to show overlay if it IS "Files" and NOT "nodeId"?
+        // Simpler: if we set "nodeId" in start, we can check for it.
+        // But types lists available formats.
+
         if (e.type === "dragenter" || e.type === "dragover") {
-            setDragActive(true);
+            if (e.dataTransfer.types.includes("Files")) {
+                setDragActive(true);
+            }
         } else if (e.type === "dragleave") {
             setDragActive(false);
         }
@@ -68,9 +90,66 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
         e.preventDefault();
         e.stopPropagation();
         setDragActive(false);
+
+        const nodeId = e.dataTransfer.getData('nodeId');
+        if (nodeId) {
+            // It's a move operation dropping on main area (no-op or move to current folder if dragging from outside? 
+            // Currently we only support dropping onto folders/breadcrumbs)
+            return;
+        }
+
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             // Handle file upload
             Array.from(e.dataTransfer.files).forEach(file => uploadFile(file));
+        }
+    };
+
+    const handleDragStart = (e: React.DragEvent, nodeId: string) => {
+        e.dataTransfer.setData('nodeId', nodeId);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragEnterTarget = (e: React.DragEvent, targetId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragTargetId(targetId);
+    };
+
+    const handleDragLeaveTarget = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDragTargetId(null);
+    };
+
+    const handleDropOnNode = (e: React.DragEvent, targetNodeId: string, isFolder: boolean) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false); // Clear main drag state if active
+        setDragTargetId(null);
+
+        const draggedNodeId = e.dataTransfer.getData('nodeId');
+
+        if (draggedNodeId) {
+            // Move node
+            if (isFolder && draggedNodeId !== targetNodeId) {
+                moveNode(draggedNodeId, targetNodeId);
+            }
+        } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            // If dropped ON a folder, upload INTO that folder? 
+            // For simplicity, we might keep main area upload. 
+            // Impl: we would need a way to upload to specific folder ID.
+            // Current uploadFile uses state currentFolderId. 
+            // We'll skip file-drop-on-folder for now and stick to node-move-drop-on-folder.
+        }
+    };
+
+    const handleDropOnBreadcrumb = (e: React.DragEvent, targetFolderId: string | null) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const draggedNodeId = e.dataTransfer.getData('nodeId');
+        if (draggedNodeId && draggedNodeId !== targetFolderId) {
+            moveNode(draggedNodeId, targetFolderId);
         }
     };
 
@@ -78,6 +157,10 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
     const handleCreateFolder = () => {
         const name = prompt("Enter folder name:");
         if (name) createFolder(name);
+    };
+
+    const handleUploadFolder = (files: FileList) => {
+        uploadFolderStructure(files);
     };
 
     const getTitle = () => {
@@ -147,7 +230,12 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
     }, []);
 
     return (
-        <DashboardLayout>
+        <DashboardLayout
+            onCreateFolder={handleCreateFolder}
+            onUploadFile={uploadFile}
+            onUploadFolder={handleUploadFolder}
+            storageUsage={totalUsage}
+        >
             <div
                 className="h-full flex flex-col"
                 onDragEnter={handleDrag}
@@ -163,8 +251,15 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                         {view === 'my-drive' && breadcrumbs.length > 0 && (
                             <div className="flex items-center text-sm text-gray-500">
                                 <span
-                                    className="hover:underline cursor-pointer"
+                                    className={cn(
+                                        "hover:underline cursor-pointer px-1 rounded",
+                                        dragTargetId === 'root' && "bg-blue-100 dark:bg-blue-900/30 text-blue-600 font-medium"
+                                    )}
                                     onClick={() => setCurrentFolderId(null)}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDragEnter={(e) => handleDragEnterTarget(e, 'root')}
+                                    onDragLeave={handleDragLeaveTarget}
+                                    onDrop={(e) => handleDropOnBreadcrumb(e, null)}
                                 >
                                     Home
                                 </span>
@@ -172,8 +267,15 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                                     <div key={crumb.id} className="flex items-center">
                                         <ChevronRight className="w-4 h-4 mx-1" />
                                         <span
-                                            className="hover:underline cursor-pointer"
+                                            className={cn(
+                                                "hover:underline cursor-pointer px-1 rounded",
+                                                dragTargetId === crumb.id && "bg-blue-100 dark:bg-blue-900/30 text-blue-600 font-medium"
+                                            )}
                                             onClick={() => setCurrentFolderId(crumb.id)}
+                                            onDragOver={(e) => e.preventDefault()}
+                                            onDragEnter={(e) => handleDragEnterTarget(e, crumb.id)}
+                                            onDragLeave={handleDragLeaveTarget}
+                                            onDrop={(e) => handleDropOnBreadcrumb(e, crumb.id)}
                                         >
                                             {crumb.name}
                                         </span>
@@ -227,7 +329,7 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                 ) : nodes.length === 0 ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                         <div className="w-64 h-64 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
-                            <img src="/placeholder-empty.svg" alt="" className="w-32 h-32 opacity-50" />
+                            <Folder className="w-32 h-32 text-gray-300 dark:text-gray-600" />
                         </div>
                         <p className="text-xl font-medium text-gray-600 dark:text-gray-300">It's pretty empty here</p>
                         <p className="text-sm mt-2">Drag and drop files to upload</p>
@@ -241,14 +343,27 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                         {nodes.map((node) => (
                             <div
                                 key={node.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, node.id)}
+                                onDragOver={(e) => node.is_folder && e.preventDefault()}
+                                onDragEnter={(e) => node.is_folder && handleDragEnterTarget(e, node.id)}
+                                onDragLeave={(e) => node.is_folder && handleDragLeaveTarget(e)}
+                                onDrop={(e) => node.is_folder && handleDropOnNode(e, node.id, node.is_folder)}
                                 onContextMenu={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
                                     setContextMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
                                 }}
                                 onClick={() => node.is_folder && setCurrentFolderId(node.id)}
+                                onDoubleClick={() => {
+                                    if (!node.is_folder) {
+                                        setPreviewFile(node);
+                                        touchNode(node.id);
+                                    }
+                                }}
                                 className={cn(
                                     "group relative border border-gray-200 dark:border-gray-700 rounded-xl transition-all cursor-pointer hover:border-blue-500 dark:hover:border-blue-500",
+                                    dragTargetId === node.id && "bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-500 shadow-md transform scale-[1.02]",
                                     viewMode === 'grid'
                                         ? "aspect-[4/3] flex flex-col bg-white dark:bg-gray-800 p-3 hover:shadow-md"
                                         : "flex items-center px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50"
@@ -267,9 +382,11 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
 
                                 {viewMode === 'grid' ? (
                                     <>
-                                        <div className="flex-1 flex items-center justify-center">
+                                        <div className="flex-1 flex items-center justify-center w-full overflow-hidden">
                                             {node.is_folder ? (
                                                 <Folder className={cn("w-16 h-16", node.content ? "text-blue-500" : "text-gray-400 fill-gray-100 dark:fill-gray-700")} />
+                                            ) : node.file_type?.startsWith('image/') ? (
+                                                <FileThumbnail file={node} />
                                             ) : (
                                                 getFileIcon(node.file_type)
                                             )}
@@ -308,6 +425,13 @@ export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
                 )}
 
                 <ContextMenu />
+
+                {previewFile && (
+                    <FilePreviewModal
+                        file={previewFile}
+                        onClose={() => setPreviewFile(null)}
+                    />
+                )}
             </div>
         </DashboardLayout>
     );
