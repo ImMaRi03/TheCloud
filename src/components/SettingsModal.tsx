@@ -30,7 +30,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             setLoading(true);
             const fileExt = file.name.split('.').pop();
             const fileName = `${user.id}-${Math.random()}.${fileExt}`;
-            const filePath = `avatars/${fileName}`;
+
 
             // Use 'avatars' public bucket for profile photos
             const { error: uploadError } = await supabase.storage

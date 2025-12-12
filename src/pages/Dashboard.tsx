@@ -24,7 +24,7 @@ interface DashboardProps {
 
 export default function Dashboard({ view = 'my-drive' }: DashboardProps) {
     const {
-        nodes, loading, currentFolderId, breadcrumbs,
+        nodes, loading, breadcrumbs,
         createFolder, uploadFile, toggleStar, moveToTrash,
         setCurrentFolderId,
         restoreFromTrash, deletePermanently,
